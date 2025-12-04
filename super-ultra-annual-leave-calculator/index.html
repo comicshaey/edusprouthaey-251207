@@ -1,769 +1,291 @@
-// ===============================
-// 0. 규정 세트 / 공통 유틸
-// ===============================
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>연차·미사용수당 파이썬 엔진 (Pyodide 데모)</title>
 
-// 규정 세트 정의
-const RULE_PROFILES = {
-  law_basic: {
-    id: "law_basic",
-    name: "[법정 기본형] 근로기준법 단순 버전",
-    yearBase: "JAN",
-    yearBaseLabel: "1월 1일 기준 (일반 근로기준법형)",
-    grantType: "law_basic",
-    daysRounding: {
-      step: 0.5,
-      mode: "floor",
-      label: "0.5일 단위 버림(예시)",
-    },
-    moneyRounding: {
-      step: 10, // ★ 최소 10원 단위 절사
-      mode: "floor",
-      label: "10원 단위 버림",
-    },
-    docs: [
-      "근로기준법 제60조(연차유급휴가)",
-      "출근율 80% 기준, 1년 미만 월 1일(최대 11일) 등",
-    ],
-    desc: "1년 미만은 월 개근 1일(최대 11일), 1년 이상은 출근율 80% 이상이면 15일 + 가산, 80% 미만이면 개근월수로 계산하는 기본형 예시입니다.",
-  },
+  <!-- 기존 공통 스타일 -->
+  <link rel="stylesheet" href="/static/style.css" />
 
-  gw_school_cba: {
-    id: "gw_school_cba",
-    name: "[예시] 강원 교육공무직 학교근무자 단협(학년도)",
-    yearBase: "MAR",
-    yearBaseLabel: "3월 1일 기준 (학교 학년도형)",
-    grantType: "gw_cba_school",
-    daysRounding: {
-      step: 0.5,
-      mode: "floor",
-      label: "0.5일 단위 버림(예시)",
-    },
-    moneyRounding: {
-      step: 10,
-      mode: "floor",
-      label: "10원 단위 버림 (예시)",
-    },
-    grantRules: {
-      firstYearMax: 11,
-      defaultDaysAfter1Y: 26,
-    },
-    docs: [
-      "강원도교육청-전국학교비정규직연대회의 단체협약(2022) 연차유급휴가 조항",
-      "교육공무직 업무편람, 교육공무직 복무의 이해(연차 파트)",
-    ],
-    desc: "학교근무 상시근로자(학년도 기준)용 예시 프로필입니다. 실제 연차일수·출근율 조건은 단체협약 원문에 맞게 grantRules를 수정해야 합니다.",
-  },
+  <!-- Pyodide 로더 -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 
-  gw_institute_cba: {
-    id: "gw_institute_cba",
-    name: "[예시] 강원 교육공무직 기관근무자 단협(회계연도)",
-    yearBase: "JAN",
-    yearBaseLabel: "1월 1일 기준 (기관 회계연도형)",
-    grantType: "gw_cba_institute",
-    daysRounding: {
-      step: 0.5,
-      mode: "floor",
-      label: "0.5일 단위 버림(예시)",
-    },
-    moneyRounding: {
-      step: 10,
-      mode: "floor",
-      label: "10원 단위 버림 (예시)",
-    },
-    grantRules: {
-      firstYearMax: 11,
-      defaultDaysAfter1Y: 26,
-    },
-    docs: [
-      "강원도교육청-전국학교비정규직연대회의 단체협약(2022) 기관근무자 조항",
-      "교육공무직 보수·복무 업무편람 중 기관근무자 부분",
-    ],
-    desc: "기관근무 상시근로자(회계연도 기준)용 예시 프로필입니다. 실제 숫자는 grantRules를 단협·지침에 맞게 수정하세요.",
-  },
+  <style>
+    .field { display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+    .numeric { text-align:right; }
+    .status { font-size:0.9rem; color:#555; margin-top:4px; }
+    .danger { color:#c8352d; }
+    .result-grid {
+      display:flex; flex-direction:column; gap:6px; font-size:0.92rem;
+    }
+    .result-item {
+      display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+    }
+    .result-label { min-width:200px; font-weight:600; }
+    .result-value {
+      margin-left:auto; text-align:right; font-variant-numeric:tabular-nums;
+    }
+    .highlight { font-size:1.05rem; font-weight:700; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell">
+      <h1>연차·미사용수당 파이썬 엔진 (Pyodide 데모)</h1>
+      <p class="sub">
+        <b>annual_engine.py</b>에 있는 파이썬 로직을 <b>서버 없이 브라우저 안</b>에서 돌려보는 테스트 페이지입니다.<br>
+        나중에 FastAPI 서버로 옮겨갈 때도 같은 모듈을 그대로 재사용할 수 있도록 구성했습니다.
+      </p>
+    </div>
+  </header>
 
-  gw_wage_guideline: {
-    id: "gw_wage_guideline",
-    name: "[예시] 통상임금 지침 반영형(단가만 입력)",
-    yearBase: "MAR",
-    yearBaseLabel: "3월 1일 기준 (학교 학년도형, 예시)",
-    grantType: "external_days",
-    daysRounding: {
-      step: 0.5,
-      mode: "floor",
-      label: "0.5일 단위 버림(예시)",
-    },
-    moneyRounding: {
-      step: 10,
-      mode: "floor",
-      label: "10원 단위 버림 (지침 예시)",
-    },
-    docs: [
-      "교육공무직 등 통상임금 산정 변경사항 안내",
-      "통상임금 노사지도 지침(250206 개정판)",
-      "2025년 교육공무직 보수표(통상임금 반영)",
-    ],
-    desc: "연차일수는 이미 다른 모듈에서 계산해 온다고 보고, 여기서는 통상임금 지침에 따른 단가를 입력해서 수당만 계산하는 모드입니다.",
-  },
+  <main>
+    <section class="section">
+      <h2>1. Pyodide 상태</h2>
+      <p class="muted">
+        페이지가 열리면 Pyodide가 자동 로딩되고, <code>annual_engine.py</code>를 불러옵니다.
+      </p>
+      <div id="pyStatus" class="status">Pyodide 로딩 중...</div>
+    </section>
 
-  custom: {
-    id: "custom",
-    name: "[커스텀] 사용자가 직접 규정 적용",
-    yearBase: "MANUAL",
-    yearBaseLabel: "기준일 수동 입력",
-    grantType: "manual_only",
-    daysRounding: {
-      step: null,
-      mode: null,
-      label: "연차일수 소수점은 사용자가 직접 판단",
-    },
-    moneyRounding: {
-      step: null,
-      mode: null,
-      label: "화면에서 선택한 커스텀 절사 규칙 적용(기본 10원 단위 절사)",
-    },
-    docs: [
-      "기관별 특수 단협, 훈령, 내부 기준 등",
-      "시험용 / 과거년도 복기용",
-    ],
-    desc: "연차일수는 직접 입력하고, 금액 절사 규칙도 화면에서 직접 지정해서 사용하는 완전 수동 모드입니다.",
-  },
-};
+    <section class="section">
+      <h2>2. 입력값</h2>
 
-// 나이스 종별 → 상위 분류 맵 (필요에 따라 계속 추가)
-const LEAVE_GROUP_MAP = {
-  "공가": "공가",
-  "병가": "병가",
-  "병조퇴": "병가",
-  "기타": "기타/교육·기타유급",
-};
+      <div class="card">
+        <h3 style="margin-top:0;">2-1. 규정 세트 & 근속·출근 요약</h3>
+        <div class="grid three">
+          <div class="field">
+            <label for="ruleId">규정 세트</label>
+            <select id="ruleId">
+              <option value="law_basic">법정 기본형 (근로기준법 단순)</option>
+              <option value="gw_school_cba">학교근무자 CBA 예시</option>
+              <option value="gw_institute_cba">기관근무자 CBA 예시</option>
+              <option value="gw_wage_guideline">통상임금 지침형 (연차일수 외부산정)</option>
+              <option value="custom">커스텀</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="serviceYears">근속연수(년, 대략)</label>
+            <input id="serviceYears" type="number" step="0.1" value="1.0" class="numeric" />
+          </div>
+          <div class="field">
+            <label for="fullYears">완전년수(정수)</label>
+            <input id="fullYears" type="number" step="1" value="1" class="numeric" />
+          </div>
+        </div>
 
-// 숫자 포맷
-function fmtNumber(n) {
-  if (n === null || n === undefined || isNaN(n)) return "-";
-  return n.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
-}
+        <div class="grid three">
+          <div class="field">
+            <label for="attendanceRate">출근율(%)</label>
+            <input id="attendanceRate" type="number" step="0.1" value="98.5" class="numeric" />
+          </div>
+          <div class="field">
+            <label for="fullMonths">월 개근 개월수</label>
+            <input id="fullMonths" type="number" step="1" value="12" class="numeric" />
+          </div>
+          <div class="field">
+            <label>입사·기준일 (문자열로만 전달)</label>
+            <input id="hireDate" type="text" placeholder="예: 2024-03-01" />
+            <input id="baseDate" type="text" placeholder="예: 2025-03-01" style="margin-top:4px;" />
+          </div>
+        </div>
+      </div>
 
-// 금액 절사·반올림 처리
-function roundMoneyByRule(amount, profile) {
-  if (amount === null || amount === undefined || isNaN(amount)) return 0;
+      <div class="card">
+        <h3 style="margin-top:0;">2-2. 임금 정보</h3>
+        <div class="grid three">
+          <div class="field">
+            <label for="wageType">임금형태</label>
+            <select id="wageType">
+              <option value="hourly">시급</option>
+              <option value="daily">일급</option>
+              <option value="monthly" selected>월급</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="wageAmount">금액 (원)</label>
+            <input id="wageAmount" type="number" step="10" value="2300000" class="numeric" />
+          </div>
+          <div class="field">
+            <label for="hoursPerDay">1일 소정근로시간</label>
+            <input id="hoursPerDay" type="number" step="0.5" value="8" class="numeric" />
+          </div>
+        </div>
 
-  let step = profile.moneyRounding.step;
-  let mode = profile.moneyRounding.mode;
+        <div class="grid two">
+          <div class="field">
+            <label for="monthlyWorkDays">월 소정근로일수</label>
+            <input id="monthlyWorkDays" type="number" step="0.1" value="20.5" class="numeric" />
+          </div>
+        </div>
+      </div>
 
-  // 커스텀 규정이면 화면에서 입력받은 값 사용
-  if (profile.id === "custom") {
-    const s = parseInt(
-      document.getElementById("customRoundingStep").value || "0",
-      10
-    );
-    const m = document.getElementById("customRoundingMode").value || "none";
-    if (s > 0) step = s;
-    if (m) mode = m;
-  }
+      <div class="card">
+        <h3 style="margin-top:0;">2-3. 연차 부여·사용 일수</h3>
+        <div class="grid two">
+          <div class="field">
+            <label for="grantedDays">부여 연차일수</label>
+            <input id="grantedDays" type="number" step="0.5" value="26" class="numeric" />
+          </div>
+          <div class="field">
+            <label for="usedDays">사용 연차일수</label>
+            <input id="usedDays" type="number" step="0.5" value="10.5" class="numeric" />
+          </div>
+        </div>
+      </div>
 
-  // ★ 최소 10원 단위 절사 + 기본은 버림
-  if (!step || step < 10) step = 10;
-  if (!mode || mode === "none") mode = "floor";
+      <div class="row" style="margin-top:8px;">
+        <button type="button" class="btn primary" id="btnRun" disabled>
+          파이썬 엔진으로 계산
+        </button>
+      </div>
+    </section>
 
-  const base = amount / step;
-  let resultBase = base;
+    <section class="section">
+      <h2>3. 결과 (annual_engine.full_pipeline)</h2>
+      <div class="card">
+        <div class="result-grid">
+          <div class="result-item">
+            <div class="result-label">규정 세트</div>
+            <div class="result-value" id="resRuleName">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">추천 연차일수</div>
+            <div class="result-value" id="resSuggestedDays">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">추천 설명</div>
+            <div class="result-value" id="resSuggestedDesc" style="text-align:left;">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">부여 / 사용 / 미사용 일수</div>
+            <div class="result-value" id="resDaysDetail">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">1일 통상임금(원단위)</div>
+            <div class="result-value" id="resDailyWage">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">미사용 연차수당 (계산상, 원단위)</div>
+            <div class="result-value" id="resPayoutRaw">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">미사용 연차수당 (절사 적용)</div>
+            <div class="result-value highlight" id="resPayoutRounded">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-label">절사 규칙</div>
+            <div class="result-value" id="resRoundingRule">-</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 
-  switch (mode) {
-    case "floor":
-      resultBase = Math.floor(base);
-      break;
-    case "round":
-      resultBase = Math.round(base);
-      break;
-    case "ceil":
-      resultBase = Math.ceil(base);
-      break;
-    default:
-      resultBase = Math.floor(base);
-  }
-  return resultBase * step;
-}
+  <script>
+    // ----------------------------
+    // Pyodide 초기화
+    // ----------------------------
+    let pyodide = null;
+    let pyReady = false;
 
-// ===============================
-// 1. 출근율/근속연수 파트
-// ===============================
+    async function initPyodide() {
+      const statusEl = document.getElementById("pyStatus");
+      try {
+        statusEl.textContent = "Pyodide 로딩 중...";
+        pyodide = await loadPyodide();
 
-function initAttendanceTable() {
-  const tbody = document.getElementById("attBody");
-  tbody.innerHTML = "";
-  for (let m = 1; m <= 12; m++) {
-    const tr = document.createElement("tr");
-    const tdMonth = document.createElement("td");
-    tdMonth.textContent = m + "월";
+        // annual_engine.py 파일을 같은 폴더에 두었다고 가정
+        const code = await (await fetch("annual_engine.py")).text();
+        await pyodide.runPythonAsync(code);
 
-    const tdPlanned = document.createElement("td");
-    const tdWorked = document.createElement("td");
-
-    const ipPlanned = document.createElement("input");
-    ipPlanned.type = "number";
-    ipPlanned.min = "0";
-    ipPlanned.step = "0.5";
-    ipPlanned.dataset.month = m;
-    ipPlanned.dataset.type = "planned";
-    ipPlanned.classList.add("numeric");
-
-    const ipWorked = document.createElement("input");
-    ipWorked.type = "number";
-    ipWorked.min = "0";
-    ipWorked.step = "0.5";
-    ipWorked.dataset.month = m;
-    ipWorked.dataset.type = "worked";
-    ipWorked.classList.add("numeric");
-
-    tdPlanned.appendChild(ipPlanned);
-    tdWorked.appendChild(ipWorked);
-
-    tr.appendChild(tdMonth);
-    tr.appendChild(tdPlanned);
-    tr.appendChild(tdWorked);
-    tbody.appendChild(tr);
-  }
-}
-
-function calcServiceYears() {
-  const hire = document.getElementById("hireDate").value;
-  const base = document.getElementById("baseDate").value;
-  const view = document.getElementById("serviceYearsView");
-
-  if (!hire || !base) {
-    view.textContent = "입사일과 기준일을 모두 입력해야 합니다.";
-    view.classList.add("danger");
-    return;
-  }
-  const hireDate = new Date(hire);
-  const baseDate = new Date(base);
-  if (baseDate < hireDate) {
-    view.textContent = "기준일이 입사일보다 빠를 수 없습니다.";
-    view.classList.add("danger");
-    return;
-  }
-  const diffMs = baseDate - hireDate;
-  const years = diffMs / (1000 * 60 * 60 * 24 * 365.2425);
-  const yearsFloor = Math.floor(years * 10) / 10;
-  view.textContent = yearsFloor.toFixed(1) + "년 (대략)";
-  view.classList.remove("danger");
-}
-
-function fillDefaultWorkingDays() {
-  const inputs = document.querySelectorAll("#attBody input[data-type='planned']");
-  inputs.forEach((ip) => {
-    if (!ip.value) ip.value = 20;
-  });
-}
-
-function calcAttendance() {
-  const plannedInputs = document.querySelectorAll(
-    "#attBody input[data-type='planned']"
-  );
-  const workedInputs = document.querySelectorAll(
-    "#attBody input[data-type='worked']"
-  );
-
-  let totalPlanned = 0;
-  let totalWorked = 0;
-  let fullMonthCount = 0;
-
-  for (let i = 0; i < plannedInputs.length; i++) {
-    const p = parseFloat(plannedInputs[i].value || "0");
-    const w = parseFloat(workedInputs[i].value || "0");
-    totalPlanned += p;
-    totalWorked += w;
-    if (p > 0 && p === w) fullMonthCount++;
-  }
-
-  const rate = totalPlanned > 0 ? (totalWorked / totalPlanned) * 100 : null;
-
-  document.getElementById("totalPlannedView").textContent =
-    fmtNumber(totalPlanned) + " 일";
-  document.getElementById("totalWorkedView").textContent =
-    fmtNumber(totalWorked) + " 일";
-  document.getElementById("attendanceRateView").textContent =
-    rate === null ? "-" : rate.toFixed(1) + " %";
-  document.getElementById("fullMonthCountView").textContent =
-    totalPlanned > 0 ? fullMonthCount + " 개월" : "-";
-}
-
-// ===============================
-// 2. 규정 세트 / 연차 추천
-// ===============================
-
-function getSelectedProfile() {
-  const id = document.getElementById("ruleProfile").value || "law_basic";
-  return RULE_PROFILES[id] || RULE_PROFILES["law_basic"];
-}
-
-function onProfileChange() {
-  const profile = getSelectedProfile();
-  document.getElementById("profileYearBaseView").textContent =
-    profile.yearBaseLabel;
-  document.getElementById("profileRoundingView").textContent =
-    profile.moneyRounding.label;
-  document.getElementById("profileDescView").textContent = profile.desc;
-  document.getElementById("profileDocsView").textContent =
-    profile.docs.join(" / ");
-
-  const baseDateInput = document.getElementById("baseDate");
-  const y = parseInt(
-    document.getElementById("year").value || new Date().getFullYear(),
-    10
-  );
-  let d;
-  if (profile.yearBase === "JAN") d = new Date(y, 0, 1);
-  else if (profile.yearBase === "MAR") d = new Date(y, 2, 1);
-  else d = new Date();
-  baseDateInput.valueAsDate = d;
-}
-
-function parseServiceYears() {
-  const hire = document.getElementById("hireDate").value;
-  const base = document.getElementById("baseDate").value;
-  if (!hire || !base) return null;
-  const hireDate = new Date(hire);
-  const baseDate = new Date(base);
-  if (baseDate < hireDate) return null;
-  const diffMs = baseDate - hireDate;
-  const years = diffMs / (1000 * 60 * 60 * 24 * 365.2425);
-  return {
-    years,
-    fullYears: Math.floor(years),
-    years1d: Math.floor(years * 10) / 10,
-  };
-}
-
-function parseAttendanceSummary() {
-  const rateText = document.getElementById("attendanceRateView").textContent;
-  const fullMonthText = document.getElementById("fullMonthCountView")
-    .textContent;
-  let rate = null;
-  if (rateText && rateText.includes("%")) {
-    rate = parseFloat(rateText.replace("%", ""));
-  }
-  let fullMonths = 0;
-  if (fullMonthText && fullMonthText.includes("개월")) {
-    fullMonths = parseInt(fullMonthText.replace("개월", "").trim(), 10) || 0;
-  }
-  return { rate, fullMonths };
-}
-
-function suggestAnnualDays() {
-  const suggestedView = document.getElementById("suggestedDaysView");
-  const profile = getSelectedProfile();
-  const svc = parseServiceYears();
-  const att = parseAttendanceSummary();
-
-  if (!svc) {
-    suggestedView.textContent =
-      "입사일·기준일을 먼저 입력하고 근속연수를 계산해주세요.";
-    suggestedView.classList.add("danger");
-    return;
-  }
-
-  let suggestedDays = 0;
-  let desc = "";
-  const fullYears = svc.fullYears;
-  const rate = att.rate;
-  const fullMonths = att.fullMonths;
-
-  if (profile.grantType === "law_basic") {
-    if (fullYears < 1) {
-      suggestedDays = Math.min(fullMonths, 11);
-      desc = `법정 기본형: 1년 미만, 월 개근 ${fullMonths}개월 → ${suggestedDays}일 (최대 11일 예시)`;
-    } else {
-      if (rate !== null && rate < 80) {
-        suggestedDays = fullMonths;
-        desc = `법정 기본형: 출근율 ${rate.toFixed(
-          1
-        )}% (80% 미만) → 월 개근 ${fullMonths}개월 = ${suggestedDays}일`;
-      } else {
-        const extra = Math.max(
-          0,
-          Math.min(10, Math.floor((fullYears - 1) / 2))
-        );
-        suggestedDays = 15 + extra;
-        desc = `법정 기본형: 근속 ${fullYears}년 / 출근율 ${
-          rate === null ? "미입력" : rate.toFixed(1) + "%"
-        } → 15일 + 가산 ${extra}일 = ${suggestedDays}일 (예시)`;
+        pyReady = true;
+        statusEl.textContent = "Pyodide + annual_engine.py 로딩 완료. 계산 가능.";
+        document.getElementById("btnRun").disabled = false;
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Pyodide 로딩 실패. 콘솔 오류를 확인하세요.";
+        statusEl.classList.add("danger");
       }
     }
-  } else if (
-    profile.grantType === "gw_cba_school" ||
-    profile.grantType === "gw_cba_institute"
-  ) {
-    const firstYearMax = profile.grantRules.firstYearMax || 11;
-    const defaultAfter = profile.grantRules.defaultDaysAfter1Y || 26;
 
-    if (fullYears < 1) {
-      suggestedDays = Math.min(fullMonths, firstYearMax);
-      desc = `강원 CBA 샘플: 1년 미만, 월 개근 ${fullMonths}개월 → ${suggestedDays}일 (최대 ${firstYearMax}일 예시)`;
-    } else {
-      if (rate !== null && rate >= 80) {
-        suggestedDays = defaultAfter;
-        desc = `강원 CBA 샘플: 근속 ${fullYears}년 / 출근율 ${rate.toFixed(
-          1
-        )}% → ${suggestedDays}일 (grantRules.defaultDaysAfter1Y 사용, 실제 값은 단협 기준으로 수정 필요)`;
-      } else if (rate !== null) {
-        suggestedDays = fullMonths;
-        desc = `강원 CBA 샘플: 출근율 ${rate.toFixed(
-          1
-        )}% (80% 미만) → 월 개근 ${fullMonths}개월 = ${suggestedDays}일`;
-      } else {
-        suggestedDays = defaultAfter;
-        desc = `강원 CBA 샘플: 출근율 미입력 → 일단 ${suggestedDays}일로 가정`;
+    initPyodide();
+
+    // ----------------------------
+    // 버튼 클릭 → full_pipeline 호출
+    // ----------------------------
+    document.getElementById("btnRun").addEventListener("click", async () => {
+      if (!pyReady) {
+        alert("Pyodide가 아직 준비되지 않았습니다.");
+        return;
       }
-    }
-  } else if (profile.grantType === "external_days") {
-    desc =
-      "통상임금 지침 반영형입니다. 연차일수는 다른 모듈에서 계산해 온 값을 [실제 부여 연차일수]에 직접 입력해주세요.";
-    suggestedDays = null;
-  } else if (profile.grantType === "manual_only") {
-    desc =
-      "커스텀 모드입니다. 실제 부여 연차일수는 [실제 부여 연차일수] 칸에 직접 입력하세요.";
-    suggestedDays = null;
-  }
 
-  suggestedView.textContent = desc;
-  suggestedView.classList.remove("danger");
+      const ruleId = document.getElementById("ruleId").value;
 
-  if (suggestedDays !== null) {
-    const grantedInput = document.getElementById("grantedDays");
-    if (!grantedInput.value) {
-      grantedInput.value = suggestedDays;
-    }
-  }
-}
+      const serviceDict = {
+        hire_date: document.getElementById("hireDate").value || "",
+        base_date: document.getElementById("baseDate").value || "",
+        service_years: parseFloat(document.getElementById("serviceYears").value || "0"),
+        full_years: parseInt(document.getElementById("fullYears").value || "0"),
+        attendance_rate: parseFloat(document.getElementById("attendanceRate").value || "0"),
+        full_months: parseInt(document.getElementById("fullMonths").value || "0"),
+      };
 
-// ===============================
-// 3. 결과 계산 (미사용수당)
-// ===============================
+      const wageDict = {
+        wage_type: document.getElementById("wageType").value,
+        wage_amount: parseFloat(document.getElementById("wageAmount").value || "0"),
+        hours_per_day: parseFloat(document.getElementById("hoursPerDay").value || "0"),
+        monthly_work_days: parseFloat(document.getElementById("monthlyWorkDays").value || "0"),
+      };
 
-function calcResult() {
-  const profile = getSelectedProfile();
-  const granted = parseFloat(
-    document.getElementById("grantedDays").value || "0"
-  );
-  const used = parseFloat(document.getElementById("usedDays").value || "0");
+      const granted = parseFloat(document.getElementById("grantedDays").value || "0");
+      const used = parseFloat(document.getElementById("usedDays").value || "0");
 
-  const wageType = document.getElementById("wageType").value;
-  const wageAmount = parseFloat(
-    document.getElementById("wageAmount").value || "0"
-  );
-  const hoursPerDay = parseFloat(
-    document.getElementById("hoursPerDay").value || "0"
-  );
-  const monthlyWorkDays = parseFloat(
-    document.getElementById("monthlyWorkDays").value || "0"
-  );
+      try {
+        // JS 딕셔너리를 Pyodide로 넘기기
+        const servicePy = pyodide.toPy(serviceDict);
+        const wagePy = pyodide.toPy(wageDict);
+        pyodide.globals.set("svc_js", servicePy);
+        pyodide.globals.set("wage_js", wagePy);
 
-  let unused = granted - used;
-  if (unused < 0) unused = 0;
+        const result = await pyodide.runPythonAsync(`
+from annual_engine import full_pipeline
+full_pipeline("${ruleId}", svc_js, wage_js, ${granted}, ${used})
+        `);
 
-  let dailyWage = 0;
-  if (wageType === "hourly") {
-    if (wageAmount > 0 && hoursPerDay > 0) {
-      dailyWage = wageAmount * hoursPerDay;
-    }
-  } else if (wageType === "daily") {
-    dailyWage = wageAmount;
-  } else if (wageType === "monthly") {
-    if (wageAmount > 0 && monthlyWorkDays > 0) {
-      dailyWage = wageAmount / monthlyWorkDays;
-    }
-  }
+        const res = result.toJs({ deep: true });
 
-  const payoutRaw = unused * dailyWage;
-  const payoutRounded = roundMoneyByRule(payoutRaw, profile);
+        // 결과 반영
+        document.getElementById("resRuleName").textContent = res.rule.name || "-";
 
-  document.getElementById("resProfileName").textContent = profile.name;
-  document.getElementById("resGrantedDays").textContent =
-    fmtNumber(granted) + " 일";
-  document.getElementById("resUsedDays").textContent =
-    fmtNumber(used) + " 일";
-  document.getElementById("resUnusedDays").textContent =
-    fmtNumber(unused) + " 일";
+        const sug = res.suggestion || {};
+        document.getElementById("resSuggestedDays").textContent =
+          (sug.suggested_days === null || sug.suggested_days === undefined)
+            ? "직접 입력 필요"
+            : sug.suggested_days.toString() + " 일";
+        document.getElementById("resSuggestedDesc").textContent = sug.description || "-";
 
-  document.getElementById("resDailyWageRaw").textContent =
-    dailyWage > 0 ? fmtNumber(Math.round(dailyWage)) + " 원" : "-";
-  document.getElementById("resPayoutRaw").textContent =
-    payoutRaw > 0 ? fmtNumber(Math.round(payoutRaw)) + " 원" : "-";
-  document.getElementById("resPayoutRounded").textContent =
-    payoutRounded > 0 ? fmtNumber(Math.round(payoutRounded)) + " 원" : "-";
+        const pay = res.payout || {};
+        document.getElementById("resDaysDetail").textContent =
+          `부여 ${pay.granted_days ?? 0}일 / 사용 ${pay.used_days ?? 0}일 / 미사용 ${pay.unused_days ?? 0}일`;
 
-  const roundingTag = document.getElementById("resRoundingTag");
-  if (profile.id === "custom") {
-    const step = parseInt(
-      document.getElementById("customRoundingStep").value || "0",
-      10
-    );
-    const mode = document.getElementById("customRoundingMode").value || "none";
-    let label;
-    const stepLabel = step && step >= 10 ? step : 10;
-    if (mode === "round") label = `${stepLabel}원 단위 반올림(1원 절삭)`;
-    else if (mode === "ceil") label = `${stepLabel}원 단위 올림(1원 절삭)`;
-    else label = `${stepLabel}원 단위 버림(1원 절삭)`;
-    roundingTag.textContent = label;
-  } else {
-    roundingTag.textContent = profile.moneyRounding.label;
-  }
-}
+        document.getElementById("resDailyWage").textContent =
+          pay.daily_wage_raw ? Math.round(pay.daily_wage_raw).toLocaleString("ko-KR") + " 원" : "-";
 
-// ===============================
-// 4. 나이스 근무상황목록 분석
-// ===============================
+        document.getElementById("resPayoutRaw").textContent =
+          pay.payout_raw ? Math.round(pay.payout_raw).toLocaleString("ko-KR") + " 원" : "-";
 
-// 헤더에서 열 이름 추론
-function guessLeaveColumn(headers) {
-  const candidates = ["종별", "복무", "근무상태", "근태", "근무구분"];
-  for (const h of headers) {
-    const name = String(h || "").trim();
-    if (!name) continue;
-    if (candidates.some((c) => name.includes(c))) return name;
-  }
-  return null;
-}
+        document.getElementById("resPayoutRounded").textContent =
+          pay.payout_rounded ? Math.round(pay.payout_rounded).toLocaleString("ko-KR") + " 원" : "-";
 
-function guessDurationColumn(headers) {
-  const candidates = ["일수/기간", "일수", "기간"];
-  for (const h of headers) {
-    const name = String(h || "").trim();
-    if (!name) continue;
-    if (candidates.some((c) => name.includes(c))) return name;
-  }
-  return null;
-}
-
-// "0일 6시간 30분" 등 파싱 (조금 공격적으로)
-function parseNiceDuration(str, hoursPerDay) {
-  if (str === null || str === undefined) {
-    return { days: 0, hours: 0, minutes: 0, totalMinutes: 0 };
-  }
-  const txt = String(str).trim();
-  if (!txt) {
-    return { days: 0, hours: 0, minutes: 0, totalMinutes: 0 };
-  }
-
-  // 숫자만 순서대로 뽑기 (예: "0일 6시간 30분" -> ["0","6","30"])
-  const nums = txt.match(/\d+/g) || [];
-  let d = 0,
-    h = 0,
-    m = 0;
-
-  if (nums.length >= 3) {
-    d = parseInt(nums[0], 10) || 0;
-    h = parseInt(nums[1], 10) || 0;
-    m = parseInt(nums[2], 10) || 0;
-  } else if (nums.length === 2) {
-    d = parseInt(nums[0], 10) || 0;
-    h = parseInt(nums[1], 10) || 0;
-  } else if (nums.length === 1) {
-    // "8일" 또는 "8시간" 등 애매한 경우는 일로 간주
-    d = parseInt(nums[0], 10) || 0;
-  }
-
-  let hpd = hoursPerDay;
-  if (!hpd || hpd <= 0) hpd = 8; // 안전장치
-
-  const totalMinutes = (d * hpd + h) * 60 + m;
-  return { days: d, hours: h, minutes: m, totalMinutes };
-}
-
-function analyzeNiceExcel() {
-  const fileInput = document.getElementById("niceFile");
-  const file = fileInput.files && fileInput.files[0];
-  if (!file) {
-    alert("근무상황목록 엑셀 파일을 먼저 선택해주세요.");
-    return;
-  }
-
-  let hpd = parseFloat(document.getElementById("hoursPerDay").value || "0");
-  const noteEl = document.getElementById("niceHoursPerDayNote");
-  if (!hpd || hpd <= 0) {
-    hpd = 8;
-    noteEl.innerHTML =
-      "※ 1일 소정근로시간 입력이 없어 <b>임시로 8시간 기준</b>으로 일수 환산했습니다.";
-  } else {
-    noteEl.innerHTML = `※ 1일 소정근로시간 <b>${hpd}시간</b> 기준으로 일수 환산했습니다.`;
-  }
-
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const data = new Uint8Array(e.target.result);
-    const wb = XLSX.read(data, { type: "array" });
-    const sheetName = wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
-
-    if (!rows.length) {
-      alert("시트에 데이터가 없습니다.");
-      return;
-    }
-
-    const headers = Object.keys(rows[0]);
-    const leaveCol = guessLeaveColumn(headers);
-    const durCol = guessDurationColumn(headers);
-
-    const detectView = document.getElementById("niceLeaveColDetect");
-    detectView.textContent = `종별 열: "${
-      leaveCol || "미검출"
-    }", 일수/기간 열: "${
-      durCol || "미검출"
-    }" (헤더명이 다르면 app.js의 guessLeaveColumn / guessDurationColumn을 수정해야 합니다.)`;
-
-    if (!leaveCol || !durCol) {
-      alert(
-        "종별 또는 일수/기간 열을 찾지 못했습니다. 헤더명을 확인해서 app.js에서 candidates를 수정해야 합니다."
-      );
-      return;
-    }
-
-    const stats = {}; // key: 종별, value: {count, totalMinutes}
-
-    rows.forEach((r) => {
-      const leaveRaw = r[leaveCol];
-      const durRaw = r[durCol];
-
-      if (leaveRaw === null || leaveRaw === undefined || leaveRaw === "") return;
-
-      const key = String(leaveRaw).trim();
-      if (!key) return;
-
-      const parsed = parseNiceDuration(durRaw, hpd);
-
-      if (!stats[key]) {
-        stats[key] = { count: 0, totalMinutes: 0 };
+        document.getElementById("resRoundingRule").textContent =
+          `${pay.rounding_step ?? 10}원 단위 ${pay.rounding_mode || "floor"} (1원 절삭)`;
+      } catch (e) {
+        console.error(e);
+        alert("파이썬 엔진 실행 중 오류가 발생했습니다. 콘솔을 확인하세요.");
       }
-      stats[key].count += 1;
-      stats[key].totalMinutes += parsed.totalMinutes;
     });
-
-    const tbody = document.getElementById("niceSummaryBody");
-    tbody.innerHTML = "";
-
-    Object.keys(stats)
-      .sort()
-      .forEach((rawKey) => {
-        const s = stats[rawKey];
-        const totalMinutes = s.totalMinutes;
-
-        const totalHoursFloat = totalMinutes / 60;
-        const totalHoursInt = Math.floor(totalHoursFloat);
-        const minutes = Math.round(totalMinutes - totalHoursInt * 60);
-
-        const decimalHours = Math.round(totalHoursFloat * 10) / 10;
-
-        const daysFromHours = Math.floor(decimalHours / hpd);
-        const remainHoursDecimal = Math.round(
-          (decimalHours - daysFromHours * hpd) * 10
-        ) / 10;
-
-        const dayByMinutes = Math.floor(totalMinutes / (hpd * 60));
-        const restMinutesForDay = totalMinutes - dayByMinutes * hpd * 60;
-        const restHoursForDay = Math.floor(restMinutesForDay / 60);
-        const restMinutes = restMinutesForDay - restHoursForDay * 60;
-
-        let group = LEAVE_GROUP_MAP[rawKey] || "기타/미분류";
-
-        const tr = document.createElement("tr");
-        const tdGroup = document.createElement("td");
-        const tdRaw = document.createElement("td");
-        const tdCount = document.createElement("td");
-        const tdSum = document.createElement("td");
-        const tdDecimal = document.createElement("td");
-        const tdConverted = document.createElement("td");
-
-        tdGroup.textContent = group;
-        tdRaw.textContent = rawKey;
-        tdCount.textContent = s.count.toLocaleString("ko-KR");
-        tdSum.textContent = `${dayByMinutes}일 ${restHoursForDay}시간 ${restMinutes}분`;
-        tdDecimal.textContent = `${decimalHours.toFixed(1)} 시간`;
-        tdConverted.textContent = `${daysFromHours}일 ${remainHoursDecimal.toFixed(
-          1
-        )}시간`;
-
-        tr.appendChild(tdGroup);
-        tr.appendChild(tdRaw);
-        tr.appendChild(tdCount);
-        tr.appendChild(tdSum);
-        tr.appendChild(tdDecimal);
-        tr.appendChild(tdConverted);
-        tbody.appendChild(tr);
-      });
-
-    document.getElementById("niceSummaryWrap").style.display = "block";
-    document.getElementById("niceSummaryNote").style.display = "block";
-  };
-
-  reader.readAsArrayBuffer(file);
-}
-
-function resetNiceAnalysis() {
-  document.getElementById("niceFile").value = "";
-  document.getElementById("niceLeaveColDetect").textContent =
-    "파일 업로드 후 “종별 / 일수/기간” 열을 자동 인식합니다.";
-  document.getElementById("niceSummaryBody").innerHTML = "";
-  document.getElementById("niceSummaryWrap").style.display = "none";
-  document.getElementById("niceSummaryNote").style.display = "none";
-  document.getElementById("niceHoursPerDayNote").innerHTML =
-    "※ 1일 소정근로시간을 아래에서 입력하지 않으면 예시로 <b>8시간 기준</b>으로 환산합니다.";
-}
-
-// ===============================
-// 5. 전체 초기화
-// ===============================
-
-function resetAll() {
-  if (!confirm("입력 내용을 모두 초기화할까요?")) return;
-
-  // 텍스트/숫자 input 초기화 (file 제외)
-  document.querySelectorAll("input").forEach((ip) => {
-    if (ip.type !== "file") ip.value = "";
-  });
-
-  document.getElementById("year").value = new Date().getFullYear();
-  document.getElementById("jobType").value = "";
-  document.getElementById("workType").value = "상시";
-  document.getElementById("wageType").value = "hourly";
-  document.getElementById("customRoundingMode").value = "none";
-
-  document.getElementById("serviceYearsView").textContent =
-    "입사일·기준일 입력 시 표시됩니다.";
-  document.getElementById("serviceYearsView").classList.remove("danger");
-
-  document.getElementById("totalPlannedView").textContent = "-";
-  document.getElementById("totalWorkedView").textContent = "-";
-  document.getElementById("attendanceRateView").textContent = "-";
-  document.getElementById("fullMonthCountView").textContent = "-";
-
-  document.getElementById("suggestedDaysView").textContent =
-    "근속연수·출근율 계산 후 [연차일수 추천계산] 버튼을 눌러주세요.";
-  document.getElementById("suggestedDaysView").classList.remove("danger");
-
-  document.getElementById("resProfileName").textContent = "-";
-  document.getElementById("resGrantedDays").textContent = "-";
-  document.getElementById("resUsedDays").textContent = "-";
-  document.getElementById("resUnusedDays").textContent = "-";
-  document.getElementById("resDailyWageRaw").textContent = "-";
-  document.getElementById("resPayoutRaw").textContent = "-";
-  document.getElementById("resPayoutRounded").textContent = "-";
-  document.getElementById("resRoundingTag").textContent = "-";
-
-  resetNiceAnalysis();
-  initAttendanceTable();
-  onProfileChange();
-}
-
-// ===============================
-// 6. 초기 실행
-// ===============================
-
-(function init() {
-  const yearInput = document.getElementById("year");
-  const now = new Date();
-  if (yearInput) yearInput.value = now.getFullYear();
-  initAttendanceTable();
-  onProfileChange();
-})();
+  </script>
+</body>
+</html>
