@@ -3,16 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>관내여비 자동 검증기 (Pyodide 버전)</title>
+  <title>관내여비 자동 검증기 (Pyodide · 원자료 버전)</title>
 
-  <!-- 공통 스타일: 네 사이트 기준 -->
+  <!-- 공통 스타일 -->
   <link rel="stylesheet" href="/static/style.css" />
 
   <!-- Pyodide 로더 -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 
   <style>
-    /* 이 페이지용 보조 스타일만 약간 추가 */
     .page-wrap {
       max-width: 880px;
       margin: 0 auto;
@@ -25,9 +24,8 @@
       background: #fff;
       margin: 18px 0;
     }
-    .file-area p {
-      margin: 8px 0;
-    }
+    .file-area p { margin: 8px 0; }
+
     .log-box {
       border: 1px solid #e5e5e5;
       border-radius: 10px;
@@ -39,6 +37,7 @@
       max-height: 180px;
       overflow: auto;
     }
+
     .result-box {
       border: 1px solid #e5e5e5;
       border-radius: 10px;
@@ -46,9 +45,7 @@
       background: #fafafa;
       margin: 12px 0;
     }
-    .result-box h3 {
-      margin-top: 0;
-    }
+    .result-box h3 { margin-top: 0; }
     .result-box textarea {
       width: 100%;
       min-height: 180px;
@@ -61,6 +58,7 @@
       resize: vertical;
       white-space: pre;
     }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -83,34 +81,34 @@
     <div class="shell">
       <h1>관내여비 자동 검증기 (브라우저 Pyodide)</h1>
       <p class="sub">
-        · 나이스 관내여비 지급내역 엑셀(.xlsx) 여러 개를 업로드하면, 브라우저 안에서 파이썬(pandas)로 월별 요약·이상행을 자동 검증합니다.<br />
-        · 서버가 필요 없어서 GitHub Pages 같은 정적 페이지에서도 동작합니다.
+        · 나이스 관내·관외 여비 <strong>원자료 그대로</strong> 엑셀(.xlsx)을 업로드하면, 브라우저 안에서 파이썬(pandas)로 <strong>관내여비만 자동 필터</strong>해서 월별 요약·이상행을 검증합니다.<br />
+        · 서버가 필요 없어서 GitHub Pages / 정적 웹에서도 동작합니다.
       </p>
     </div>
   </header>
 
   <main class="page-wrap">
     <section class="section">
-      <h2 class="local-h2">1. 사용 전제 (엑셀 구조)</h2>
+      <h2 class="local-h2">1. 사용 전제 (원자료 열 구조)</h2>
+      <p>엑셀 원자료 열 항목(순서)은 다음과 같다고 가정합니다.</p>
+      <pre class="log-box">시작일  종료일  출장구분  출장자  계좌정보  출장지  출장목적  부지급  여비금액  사업정보  지급금액</pre>
       <ul>
-        <li>엑셀 헤더(1행)에 다음 열이 있어야 합니다: <strong>시작일, 출장자, 부지급, 지급금액</strong></li>
-        <li><strong>부지급 = "아니오"</strong> 인 행만 실제 지급으로 간주합니다.</li>
-        <li>관내 단가는 <strong>10,000 / 20,000원</strong>만 정상 단위금액으로 보고, 그 외 금액은 이상행으로 플래그합니다.</li>
-        <li>여러 연도·월 파일(.xlsx)을 한 번에 선택하면, 월별(연월) 기준으로 모두 합산해서 검증합니다.</li>
+        <li><strong>출장구분</strong> 열에 “관내”가 들어간 행만 관내여비로 간주합니다. (예: 관내출장, 관내 등)</li>
+        <li><strong>부지급</strong> 열이 <code>아니오</code> 인 행만 실제 지급으로 봅니다.</li>
+        <li>금액 검증은 <strong>지급금액</strong> 기준으로 하고, 참고용으로 <strong>여비금액</strong>도 이상행 출력에 포함합니다.</li>
+        <li>관외행(출장구분에 “관내”가 아닌 것)은 자동으로 제외됩니다.</li>
       </ul>
       <p class="local-small muted">
-        ※ 실제 감사·지급 시에는 여비 규정, 교육청 지침, 출장명령서·여비명세서 등과 함께 최종 판단해야 합니다.
+        ※ 원자료에서 열을 따로 삭제하거나 재정렬할 필요 없습니다. 위 이름만 그대로 존재하면 됩니다.
       </p>
     </section>
 
     <section class="section file-area">
       <h2 class="local-h2">2. 엑셀 업로드 및 검증 실행</h2>
 
-      <p>
-        <span class="badge">관내여비 관점 자동 검증</span>
-      </p>
+      <p><span class="badge">관내여비 자동 필터 + 단가 검증</span></p>
       <p class="local-small muted">
-        · 3년치 관내여비 지급내역 엑셀(.xlsx)을 모두 선택해서 업로드하면, 월별 요약과 이상행 목록을 한 번에 생성합니다.<br />
+        · 3년치 관내·관외 여비 원자료 엑셀(.xlsx)을 모두 선택해서 업로드하면, 관내 행만 골라서 월별 요약과 이상행 목록을 한 번에 생성합니다.<br />
         · 파일 선택 후 <strong>“검증 실행”</strong> 버튼을 눌러주세요.
       </p>
 
@@ -128,17 +126,18 @@
       <h2 class="local-h2">3. 결과 (CSV 형식)</h2>
 
       <div class="result-box">
-        <h3 class="local-h3">3-1. 월별 관내여비 요약 (inner_monthly_summary.csv)</h3>
+        <h3 class="local-h3">3-1. 월별 관내여비 요약 (inner_monthly_summary)</h3>
         <p class="local-small muted">
-          · 연월별 관내여비 총액/건수/이상행 건수/최소·최대금액 및 “전건 허용 단위금액 여부”가 정리됩니다.
+          · 연월별 관내여비 총액/건수/이상행 건수/최소·최대금액 및 “전건 허용 단위금액 여부”가 정리됩니다.<br />
+          · 10,000 / 20,000만 허용 단위금액으로 보고 그 외 금액이 있는 월은 이상행이 존재합니다.
         </p>
         <textarea id="summaryOutput" readonly placeholder="여기에 월별 요약 CSV 결과가 표시됩니다."></textarea>
       </div>
 
       <div class="result-box">
-        <h3 class="local-h3">3-2. 관내여비 이상행 상세 (inner_detail_flags.csv)</h3>
+        <h3 class="local-h3">3-2. 관내여비 이상행 상세 (inner_detail_flags)</h3>
         <p class="local-small muted">
-          · 10,000 / 20,000원이 아닌 지급액이 표시되며, 연월/지급일자/성명/지급액/파일명·시트명이 함께 출력됩니다.
+          · 10,000 / 20,000원이 아닌 지급액이 표시되며, 연월/지급일자/성명/지급액/여비금액/출장구분/출장지/출장목적/파일명·시트명이 함께 출력됩니다.
         </p>
         <textarea id="detailOutput" readonly placeholder="여기에 이상행 상세 CSV 결과가 표시됩니다."></textarea>
       </div>
@@ -147,9 +146,10 @@
 
   <footer class="site-footer">
     <div class="shell">
-      <p>관내여비 자동 검증기 (Pyodide / pandas 기반)</p>
+      <p>관내여비 자동 검증기 (Pyodide / pandas 기반 · 원자료 버전)</p>
       <p class="muted">
-        · 서버 없이 브라우저에서만 동작하는 시범 버전입니다. 대용량 파일이 많을 경우 브라우저 성능에 영향을 줄 수 있습니다.
+        · 서버 없이 브라우저에서만 동작하는 시범 버전입니다. 대용량 파일이 많을 경우 브라우저 성능에 영향을 줄 수 있습니다.<br />
+        · 실제 감사·지급 시에는 여비 규정, 기관 지침, 명령서·명세서 등과 함께 최종 판단해야 합니다.
       </p>
     </div>
   </footer>
@@ -158,32 +158,36 @@
     // ============================
     // 1. Pyodide 로딩
     // ============================
-
     let pyodideReadyPromise = null;
 
     async function initPyodideAndPackages() {
       const logEl = document.getElementById("pyLog");
       logEl.textContent = "Pyodide 로딩 중... (최초 1회만 다소 시간이 걸릴 수 있습니다)";
 
-      // Pyodide 로드
       const pyodide = await loadPyodide();
 
       logEl.textContent = "pandas 패키지 로딩 중...";
-
-      // pyodide에는 pandas가 기본 포함되어 있음
       await pyodide.loadPackage("pandas");
 
-      // 여기서 Python 쪽 검증 함수 정의
       const pythonCode = `
 import io
 import pandas as pd
-from datetime import datetime
 
-# ===== 환경 설정 =====
-DATE_COL = "시작일"      # 날짜
-NAME_COL = "출장자"      # 성명
-AMOUNT_COL = "지급금액"   # 금액
-FLAG_COL = "부지급"      # 부지급 여부 (아니오만 사용)
+# ===== 환경 설정 (원자료 열 이름) =====
+DATE_COL        = "시작일"     # 날짜
+END_DATE_COL    = "종료일"     # (현재는 요약에 직접 사용하진 않지만 구조 인지용)
+TYPE_COL        = "출장구분"   # 관내/관외 구분
+NAME_COL        = "출장자"     # 성명
+ACCOUNT_COL     = "계좌정보"   # 참고용
+PLACE_COL       = "출장지"     # 출장지
+PURPOSE_COL     = "출장목적"   # 출장 목적
+FLAG_COL        = "부지급"     # 부지급 여부 ("아니오"만 실제 지급)
+INNER_KEYWORD   = "관내"       # "관내"가 들어간 행만 관내여비로 간주
+FARE_COL        = "여비금액"   # 여비금액(참고용)
+BIZINFO_COL     = "사업정보"   # 참고용
+AMOUNT_COL      = "지급금액"   # 실제 지급액
+
+# 관내 단가 (왕복 2km 이상, 4시간 기준)
 ALLOWED_AMOUNTS = {10000, 20000}
 
 def normalize_date_series(s):
@@ -191,14 +195,10 @@ def normalize_date_series(s):
     return pd.to_datetime(s, errors="coerce")
 
 def audit_inner_travel(file_list):
-    \"\"\"
-    file_list: 브라우저에서 업로드한 엑셀 파일 경로 리스트 (Pyodide FS 상 경로)
-    반환값: (summary_csv_str, detail_csv_str)
-    \"\"\"
+    \"\"\"원자료(관내·관외 혼합) 엑셀에서 관내여비만 필터해 검증\"\"\"
     frames = []
     for path in file_list:
         try:
-            # sheet_name=None 이면 모든 시트를 dict로 읽어옴
             xls = pd.read_excel(path, sheet_name=None)
             for sheet_name, df in xls.items():
                 if df is None or df.empty:
@@ -208,7 +208,6 @@ def audit_inner_travel(file_list):
                 tmp["__시트명"] = sheet_name
                 frames.append(tmp)
         except Exception as e:
-            # 읽기 실패해도 전체는 계속 진행
             print(f"[경고] 파일 읽기 실패: {path} -> {e}")
 
     if not frames:
@@ -216,30 +215,41 @@ def audit_inner_travel(file_list):
 
     df_all = pd.concat(frames, ignore_index=True)
 
-    # 필수 열 체크
-    required_cols = [DATE_COL, NAME_COL, AMOUNT_COL, FLAG_COL]
+    # 필수 열 존재 확인
+    required_cols = [
+        DATE_COL, TYPE_COL, NAME_COL, FLAG_COL,
+        FARE_COL, AMOUNT_COL
+    ]
     missing = [c for c in required_cols if c not in df_all.columns]
     if missing:
         raise ValueError(f"다음 열을 찾을 수 없습니다. 엑셀 헤더 또는 설정을 확인하세요: {missing}")
 
-    # 부지급 != "아니오" 는 제외 (실제 지급만 사용)
-    df = df_all[df_all[FLAG_COL].astype(str).str.strip() == "아니오"].copy()
+    # 1) 관내 행만 필터 (출장구분에 '관내' 포함)
+    mask_inner = df_all[TYPE_COL].astype(str).str.contains(INNER_KEYWORD, na=False)
+    df = df_all[mask_inner].copy()
     if df.empty:
-        raise ValueError("부지급='아니오' 인 행이 없습니다. 엑셀 구조 또는 필터 조건을 확인하세요.")
+        raise ValueError("출장구분에 '관내'가 포함된 행이 없습니다. 관내/관외 구분 열과 값을 확인하세요.")
 
-    # 날짜·연월 정리
+    # 2) 부지급='아니오'인 행만 실제 지급으로 간주
+    df = df[df[FLAG_COL].astype(str).str.strip() == "아니오"].copy()
+    if df.empty:
+        raise ValueError("관내 행 중 부지급='아니오' 인 행이 없습니다. 부지급 값 표현을 확인하세요.")
+
+    # 3) 날짜·연월 정리
     df["__날짜"] = normalize_date_series(df[DATE_COL])
     df["연월"] = df["__날짜"].dt.to_period("M").astype(str)
 
-    # 금액·성명 정리
+    # 4) 금액·성명·참고열 정리
     df["__지급액"] = pd.to_numeric(df[AMOUNT_COL], errors="coerce").fillna(0).astype(int)
+    df["__여비금액"] = pd.to_numeric(df[FARE_COL], errors="coerce").fillna(0).astype(int)
     df["__성명"] = df[NAME_COL].astype(str).fillna("")
+    df["__출장구분"] = df[TYPE_COL].astype(str).fillna("")
+    df["__출장지"] = df.get(PLACE_COL, "").astype(str)
+    df["__출장목적"] = df.get(PURPOSE_COL, "").astype(str)
 
-    # 허용 단위금액 여부
+    # 5) 허용 단위금액 여부
     df["허용단위금액여부"] = df["__지급액"].isin(ALLOWED_AMOUNTS)
-    # 만원 단위 여부
     df["만원단위여부"] = (df["__지급액"] % 10000 == 0)
-    # 이상행: 허용 단위금액이 아님
     df["이상여부"] = ~df["허용단위금액여부"]
 
     # ===== 1) 월별 요약 =====
@@ -263,6 +273,10 @@ def audit_inner_travel(file_list):
         "__날짜",
         "__성명",
         "__지급액",
+        "__여비금액",
+        "__출장구분",
+        "__출장지",
+        "__출장목적",
         "__파일명",
         "__시트명",
         "허용단위금액여부",
@@ -273,10 +287,14 @@ def audit_inner_travel(file_list):
             "__날짜": "지급일자",
             "__성명": "성명",
             "__지급액": "지급액",
+            "__여비금액": "여비금액",
+            "__출장구분": "출장구분",
+            "__출장지": "출장지",
+            "__출장목적": "출장목적",
         }
     )
 
-    # CSV 문자열로 변환 (UTF-8, BOM 없이)
+    # CSV 문자열로 변환
     summary_csv = summary.to_csv(index=False)
     detail_csv = detail.to_csv(index=False)
 
@@ -288,13 +306,11 @@ def audit_inner_travel(file_list):
       return pyodide;
     }
 
-    // 최초 1회 로딩
     pyodideReadyPromise = initPyodideAndPackages();
 
     // ============================
-    // 2. 파일을 Pyodide FS로 넘겨서 검증 실행
+    // 2. 브라우저에서 파일 업로드 → Pyodide FS → 파이썬 검증
     // ============================
-
     async function runAudit() {
       const logEl = document.getElementById("pyLog");
       const summaryOutput = document.getElementById("summaryOutput");
@@ -306,23 +322,21 @@ def audit_inner_travel(file_list):
       const fileInput = document.getElementById("fileInput");
       const files = fileInput.files;
       if (!files || files.length === 0) {
-        alert("관내여비 지급내역 엑셀(.xlsx) 파일을 하나 이상 선택해 주세요.");
+        alert("관내·관외 여비 원자료 엑셀(.xlsx) 파일을 하나 이상 선택해 주세요.");
         return;
       }
 
-      logEl.textContent = `Pyodide 준비 상태 확인 중...`;
+      logEl.textContent = "Pyodide 준비 상태 확인 중...";
       const pyodide = await pyodideReadyPromise;
 
-      // 업로드용 폴더 생성 (이미 있으면 무시)
       try {
         pyodide.FS.mkdir("uploads");
       } catch (e) {
-        // 이미 있으면 오류 무시
+        // 이미 있으면 무시
       }
 
       logEl.textContent = `엑셀 파일 ${files.length}개를 브라우저로 읽는 중...`;
 
-      // JS에서 ArrayBuffer -> Pyodide FS 로 쓰기
       const filePaths = [];
       for (const file of files) {
         const arrayBuffer = await file.arrayBuffer();
@@ -332,11 +346,9 @@ def audit_inner_travel(file_list):
         filePaths.push(safeName);
       }
 
-      logEl.textContent =
-        `엑셀 ${files.length}개를 FS에 저장 완료. 파이썬으로 검증을 실행합니다...`;
+      logEl.textContent = `엑셀 ${files.length}개를 FS에 저장 완료. 파이썬으로 관내여비 검증을 실행합니다...`;
 
       try {
-        // Python 쪽 audit_inner_travel(file_list) 호출
         const fileListLiteral = JSON.stringify(filePaths);
         const code = `
 file_list = ${fileListLiteral}
@@ -355,14 +367,16 @@ summary_csv, detail_csv = audit_inner_travel(file_list)
       } catch (err) {
         console.error(err);
         logEl.textContent =
-          "검증 중 오류가 발생했습니다. 엑셀 헤더(시작일/출장자/부지급/지급금액)와 내용 구조를 다시 확인해 주세요.\n\n" +
+          "검증 중 오류가 발생했습니다.\n\n" +
+          "1) 엑셀 헤더가 [시작일, 종료일, 출장구분, 출장자, 계좌정보, 출장지, 출장목적, 부지급, 여비금액, 사업정보, 지급금액] 구조인지\n" +
+          "2) 출장구분에 '관내'가 포함된 행이 있는지\n" +
+          "3) 부지급 값이 '아니오'로 되어있는지\n\n" +
+          "를 확인해 주세요.\n\n상세 오류:\n" +
           String(err);
       }
     }
 
-    document.getElementById("runAuditBtn").addEventListener("click", () => {
-      runAudit();
-    });
+    document.getElementById("runAuditBtn").addEventListener("click", runAudit);
   </script>
 </body>
 </html>
